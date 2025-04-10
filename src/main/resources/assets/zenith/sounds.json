@@ -1,0 +1,10 @@
+{
+	"zenith_attack" : {
+		"sounds" : [
+			{
+				"name": "zenith:zenith_attack",
+				"volume": 1
+			}
+		]
+	}
+}

@@ -1,0 +1,34 @@
+{
+  "parent": "minecraft:recipes/root",
+  "rewards": {
+    "recipes": [
+      "zenith:zenith"
+    ]
+  },
+  "criteria": {
+    "has_magical_wood": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": [
+              "minecraft:dragon_egg"
+            ]
+          }
+        ]
+      }
+    },
+    "has_the_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "zenith:zenith"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_magical_wood",
+      "has_the_recipe"
+    ]
+  ]
+}
