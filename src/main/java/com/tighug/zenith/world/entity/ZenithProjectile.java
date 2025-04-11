@@ -4,10 +4,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.tighug.zenith.item.ModItem;
-
-import java.lang.Math;
-import java.util.Map;
-
 import com.tighug.zenith.util.VariableAABB;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -25,12 +21,7 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.entity.MobType;
-import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.EntityType.Builder;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
@@ -54,6 +45,9 @@ import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.joml.*;
 
+import java.lang.Math;
+import java.util.Map;
+
 import static com.tighug.zenith.Zenith.MODID;
 
 @SuppressWarnings("resource")
@@ -63,13 +57,14 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
     public static final float[] SCALE = new float[20];
     private static final byte LIFE = 20;
     private @NotNull Map<Enchantment, Integer> enchantments;
-    private float acceleration;
     private @NotNull Vec3 ODirection;
-    private byte tickCount;
-    private Vec3 OPosition;
+    private @NotNull Vec3 OPosition;
+    private float acceleration;
     private float curvature;
     private float radius;
     private float yVelocity;
+    private float yRotB;
+    private byte tickCount;
 
     static {
         for (byte b = 0; b < 20; ++b) {
@@ -80,12 +75,14 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
     private ZenithProjectile(EntityType<? extends ZenithProjectile> p_37248_, Level p_37249_) {
         super(p_37248_, p_37249_);
         this.enchantments = Map.of();
-        this.acceleration = 1.0F;
         this.ODirection = Vec3.ZERO;
         this.OPosition = Vec3.ZERO;
-        this.yVelocity = 0.0F;
-        this.curvature = 0.5F + random.nextFloat() * 2.0F;
-        this.radius = (float) ((this.LIFE * this.curvature) / Math.PI / 2.0);
+        if (!level().isClientSide) {
+            this.acceleration = 1.0F;
+            this.yVelocity = 0.0F;
+            this.curvature = 0.5f + random.nextFloat() * 2.2f;
+            this.radius = (float) ((LIFE * this.curvature) / Math.PI / 2.0);
+        }
         this.noPhysics = true;
     }
 
@@ -95,37 +92,38 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
         p.setOwner(player);
         p.setPos(player.position().add(0.0, 0.8, 0.0).add(p.calculateViewVector(0.0F, player.getYRot()).scale(-1.0)));
         p.OPosition = p.position();
-        p.setRot(player.getYRot() + 90.0F, 0.0F);
-        p.yRotO = p.getYRot();
+        p.setYRot((player.getYRot() + 90.0f) % 360.0f);
+        p.yRotB = p.getYRot();
         return p;
-    }
-
-    private void setCurvature(float f) {
-        this.curvature = f;
-        this.radius = (float)((double)((float)this.LIFE * this.curvature) / Math.PI / (double)2.0F);
     }
 
     public static @NotNull ZenithProjectile of(Level level, @NotNull Player player) {
         ZenithProjectile zenithProjectile = newZenithProjectile(level, player);
         zenithProjectile.setODirection(zenithProjectile.calculateViewVector(0.0F, player.getYRot()));
-        zenithProjectile.acceleration = (float)(20.0 * Math.cos(Math.toRadians(player.getXRot())) / zenithProjectile.radius);
-        zenithProjectile.yVelocity = (float)(-(Math.sin(Math.toRadians(player.getXRot())) * 4.0));
-        zenithProjectile.xRotO = zenithProjectile.getXRot();
+        zenithProjectile.acceleration = 20.0f * Mth.cos((float) Math.toRadians(player.getXRot())) / zenithProjectile.radius;
+        zenithProjectile.yVelocity = (float) (-(Mth.sin((float) Math.toRadians(player.getXRot())) * 4.0));
+        zenithProjectile.setXRot(-player.getXRot());
         return zenithProjectile;
     }
 
     public static @NotNull ZenithProjectile of(Level level, @NotNull Player player, Vec3 vec3) {
         ZenithProjectile zenithProjectile = newZenithProjectile(level, player);
-        vec3 = player.position().vectorTo(vec3).add(0.0, -0.8, 0.0);
-        Vec3 vec31 = new Vec3(vec3.x, 0.0F, vec3.z);
-        zenithProjectile.setODirection(vec31);
-        double length = vec31.length();
-        if (length > (double)(2.0F * zenithProjectile.radius)) {
+        vec3 = player.position().vectorTo(vec3);
+        double y = vec3.y - 0.8;
+        vec3 = new Vec3(vec3.x, 0.0, vec3.z);
+        zenithProjectile.setODirection(vec3);
+        double length = vec3.length();
+        zenithProjectile.setXRot((float) (Mth.atan2(y, length) * (180F / Math.PI)));
+        if (length > (2.0 * zenithProjectile.radius)) {
             zenithProjectile.acceleration = (float)(length / zenithProjectile.radius / 2.0);
         }
-
-        zenithProjectile.yVelocity = (float)(vec3.y / 10.0);
+        zenithProjectile.yVelocity = (float) (y / 10.0);
         return zenithProjectile;
+    }
+
+    private void setCurvature(float f) {
+        this.curvature = f;
+        this.radius = (float) ((LIFE * this.curvature) / Math.PI / 2.0);
     }
 
     @Override
@@ -152,6 +150,7 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
         compoundTag.putFloat("curvature", this.curvature);
         compoundTag.putFloat("acceleration", this.acceleration);
         compoundTag.putFloat("yVelocity", this.yVelocity);
+        compoundTag.putFloat("yRotB", this.yRotB);
     }
 
     @Override
@@ -160,13 +159,13 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
         if (!compoundTag.getList("enchantments", 10).isEmpty()) {
             this.enchantments = EnchantmentHelper.deserializeEnchantments(compoundTag.getList("enchantments", 10));
         }
-
         this.ODirection = new Vec3(compoundTag.getDouble("OX"), compoundTag.getDouble("OY"), compoundTag.getDouble("OZ"));
         this.OPosition = new Vec3(compoundTag.getDouble("OPX"), compoundTag.getDouble("OPY"), compoundTag.getDouble("OPZ"));
         this.tickCount = compoundTag.getByte("tickCount");
         this.setCurvature(compoundTag.getFloat("curvature"));
         this.acceleration = compoundTag.getFloat("acceleration");
         this.yVelocity = compoundTag.getFloat("yVelocity");
+        this.yRotB = compoundTag.getFloat("yRotB");
     }
 
     public void setODirection(@NotNull Vec3 vec3) {
@@ -191,7 +190,7 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
     public void tick() {
         super.tick();
 
-        if (this.tickCount == this.LIFE / 2) {
+        if (this.tickCount == LIFE / 2) {
             this.yVelocity *= -1.0F;
         }
 
@@ -226,27 +225,26 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
             }
         }
 
-        if (this.tickCount < this.LIFE && this.tickCount > -1) {
+        if (this.tickCount < LIFE && this.tickCount > -1) {
             float f1 = (float) (-this.getYRot() * (Math.PI / 180));
             Vector3d v3d = new Vector3d(Mth.sin(f1), 0, Mth.cos(f1)).mul(this.curvature);
             f1 = (float) (SCALE[tickCount] * (this.acceleration - 1.0) * this.curvature);
             v3d.add(ODirection.x * f1, 0, ODirection.z * f1).y += this.yVelocity;
-            if (this.tickCount > this.LIFE / 2 && this.getOwner() != null) {
+            if (this.tickCount > LIFE / 2 && this.getOwner() != null) {
                 var v3 = this.OPosition.vectorTo(this.getOwner().position().add(0.0, 0.8, 0.0).add(this.calculateViewVector(0.0F, this.getOwner().getYRot()).scale(-1.0))).toVector3f();
                 if (v3.lengthSquared() > 6400) {
                     this.discard();
                     return;
                 }
-                v3 = v3.mul(1.0f / (this.LIFE - this.tickCount));
+                v3 = v3.mul(1.0f / (LIFE - this.tickCount));
                 this.OPosition = this.OPosition.add(v3.x, v3.y, v3.z);
                 v3d.add(v3);
             }
             Vec3 vec3 = new Vec3(v3d.x, v3d.y, v3d.z);
             this.setDeltaMovement(vec3);
-            this.move(MoverType.SELF, vec3);
-            this.yRotO = this.getYRot();
-            this.setRot(this.getYRot() - 360.0f / this.LIFE, 0.0F);
-        } else if (this.tickCount > this.LIFE + 1) {
+            this.setPos(this.position().add(vec3));
+            this.setYRot(this.getYRot() - 360.0f / LIFE);
+        } else if (this.tickCount > LIFE + 1) {
             this.discard();
             return;
         }
@@ -261,10 +259,6 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
 
     @Override
     public void move(@NotNull MoverType moverType, @NotNull Vec3 vec3) {
-        if (moverType == MoverType.SELF) {
-            super.move(moverType, vec3);
-        }
-
     }
 
     @Override
@@ -282,6 +276,10 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
         buffer.writeFloat(this.acceleration);
         buffer.writeFloat(this.getYRot());
         buffer.writeFloat(this.getXRot());
+        buffer.writeFloat(this.yRotB);
+        buffer.writeDouble(this.OPosition.x);
+        buffer.writeDouble(this.OPosition.y);
+        buffer.writeDouble(this.OPosition.z);
         buffer.writeFloat(this.yVelocity);
         buffer.writeByte(this.tickCount);
     }
@@ -299,7 +297,8 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
         this.acceleration = additionalData.readFloat();
         this.setYRot(additionalData.readFloat());
         this.setXRot(additionalData.readFloat());
-        this.OPosition = this.position();
+        this.yRotB = additionalData.readFloat();
+        this.OPosition = new Vec3(additionalData.readDouble(), additionalData.readDouble(), additionalData.readDouble());
         this.yVelocity = additionalData.readFloat();
         this.tickCount = additionalData.readByte();
     }
@@ -307,38 +306,62 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
     @OnlyIn(Dist.CLIENT)
     public static final class ZenithProjectileRenderer extends EntityRenderer<ZenithProjectile> {
         public static final ResourceLocation ENTITY = new ResourceLocation(MODID, "textures/entity/zenith_projectile.png");
+        public static final Quaternionf AXIS;
+        public static final double SIN45 = Math.sin(Math.toRadians(45.0));
         private final ItemStack defaultInstance;
 
+        static {
+            double a = Math.toRadians(90.0) * 0.5;
+            double sin = Math.sin(a);
+            double cos = Math.cos(a);
+            AXIS = new Quaternionf(-sin * SIN45, sin * SIN45, 0.0, cos);
+        }
+
         @Override
-        public void render(@NotNull ZenithProjectile zenithProjectile, float p_113840_, float p_113841_, @NotNull PoseStack poseStack, @NotNull MultiBufferSource multiBufferSource, int i) {
-            VertexConsumer vertexconsumer = multiBufferSource.getBuffer(RenderType.entityTranslucent(this.getTextureLocation(zenithProjectile)));
-            this.renderEntity(vertexconsumer, zenithProjectile, poseStack);
+        public void render(@NotNull ZenithProjectile zenithProjectile, float yaw, float tickDelta, @NotNull PoseStack poseStack, @NotNull MultiBufferSource multiBufferSource, int light) {
+            int currentAngle = (18 * zenithProjectile.tickCount);
+            if (currentAngle > 360) currentAngle = 0;
+            this.renderEntity(multiBufferSource.getBuffer(RenderType.entityTranslucent(this.getTextureLocation(zenithProjectile))), zenithProjectile, poseStack, currentAngle);
             poseStack.pushPose();
-            poseStack.mulPose(Axis.YP.rotationDegrees(-zenithProjectile.getYRot() - 45.0F));
-            poseStack.mulPose(Axis.XP.rotationDegrees(90.0F));
+//            poseStack.mulPose(Axis.YP.rotationDegrees(-zenithProjectile.getYRot() - 45.0F));
+            poseStack.translate(0.0, 0.2, 0.0);
+            poseStack.mulPose(Axis.YP.rotationDegrees(-zenithProjectile.yRotB));
+            poseStack.mulPose(Axis.ZP.rotationDegrees(45 + zenithProjectile.getXRot()));
+            poseStack.mulPose(AXIS);
+//            PoseStack.Pose posestack$pose = poseStack.last();
+//            Matrix4f matrix4f = posestack$pose.pose();
+//            Matrix3f matrix3f = posestack$pose.normal();
+//            vertexconsumer = multiBufferSource.getBuffer(RenderType.lines());
+//            RenderSystem.lineWidth(5);
+//            vertexconsumer.vertex(matrix4f, 0, 0, 0).color(255, 0, 0, 255).normal(matrix3f, 1, 0, 0).endVertex();
+//            vertexconsumer.vertex(matrix4f, 5, 0.0f, 0).color(255, 0, 0, 255).normal(matrix3f, 1, 0, 0).endVertex();
+//            vertexconsumer.vertex(matrix4f, 0, 0, 0).color(0, 255, 0, 255).normal(matrix3f, 0, 1, 0).endVertex();
+//            vertexconsumer.vertex(matrix4f, 0, 5, 0).color(0, 255, 0, 255).normal(matrix3f, 0, 1, 0).endVertex();
+//            vertexconsumer.vertex(matrix4f, 0, 0, 0).color(0, 0, 255, 255).normal(matrix3f, 0, 0, 1).endVertex();
+//            vertexconsumer.vertex(matrix4f, 0, 0.0f, 5).color(0, 0, 255, 255).normal(matrix3f, 0, 0, 1).endVertex();
+//            vertexconsumer.vertex(matrix4f, 0, 0, 0).color(255).normal(matrix3f, 0, 0, 1).endVertex();
+//            vertexconsumer.vertex(matrix4f, (float) (SIN45 * f1),  (float) (SIN45 * f2),  (float) (SIN45 * f3)).color(255).normal(matrix3f, 0, 0, 1).endVertex();
+            if (currentAngle > 0) {
+                poseStack.mulPose(Axis.ZP.rotationDegrees(currentAngle));
+            }
             poseStack.scale(2.0F, 2.0F, 2.0F);
             ItemRenderer itemRenderer = Minecraft.getInstance().getItemRenderer();
             BakedModel bakedmodel = itemRenderer.getModel(this.defaultInstance, zenithProjectile.level(), null, zenithProjectile.getId());
-            itemRenderer.render(this.defaultInstance, ItemDisplayContext.FIXED, false, poseStack, multiBufferSource, i, OverlayTexture.NO_OVERLAY, bakedmodel);
+            itemRenderer.render(this.defaultInstance, ItemDisplayContext.FIXED, false, poseStack, multiBufferSource, light, OverlayTexture.NO_OVERLAY, bakedmodel);
             poseStack.popPose();
-            super.render(zenithProjectile, p_113840_, p_113841_, poseStack, multiBufferSource, i);
+            super.render(zenithProjectile, yaw, tickDelta, poseStack, multiBufferSource, light);
         }
 
-        private void renderEntity(VertexConsumer vertexconsumer, @NotNull ZenithProjectile zenithProjectile, @NotNull PoseStack poseStack) {
-            double v = 360.0F / (float)zenithProjectile.LIFE;
-            double currentAngle = v * (double)zenithProjectile.tickCount;
-            if (currentAngle > 359.0) {
-                currentAngle = 0.0;
-            }
-
-            int s = Math.min(45, (int)currentAngle);
+        private void renderEntity(VertexConsumer vertexconsumer, @NotNull ZenithProjectile zenithProjectile, @NotNull PoseStack poseStack, int currentAngle) {
+            int s = Math.min(45, currentAngle);
             if (s > 0) {
                 poseStack.pushPose();
                 PoseStack.Pose posestack$pose = poseStack.last();
                 Matrix4f matrix4f = posestack$pose.pose();
                 Matrix3f matrix3f = posestack$pose.normal();
-                poseStack.mulPose(Axis.YP.rotationDegrees(-zenithProjectile.getYRot() - 90.0F));
-                poseStack.translate(0.0, 0.0, 1.0);
+                float p253800 = (float) Math.toRadians(-zenithProjectile.getYRot() - 90.0F);
+                poseStack.mulPose(Axis.YP.rotation(p253800));
+                poseStack.translate(0.0, 0.2, 0.8);
                 double r = zenithProjectile.curvature + (Math.PI / 10D);
                 double dr = 1.0F;
                 int l = 15728880;
@@ -350,7 +373,7 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
                 float v_e = 0.0F;
                 double a = Math.toRadians(zenithProjectile.getYRot());
                 var v2d = this.multiply(Math.sin(a), Math.cos(a), zenithProjectile.ODirection.x, zenithProjectile.ODirection.z);
-                double du = (double)1.0F / Math.sin(Math.toRadians(s));
+                double du = 1.0 / Math.sin(Math.toRadians(s));
                 float radians;
                 double cos;
                 double sin;
@@ -362,7 +385,7 @@ public final class ZenithProjectile extends Projectile implements IEntityAdditio
                     sin = Mth.sin(radians);
                     u_e = (float)(sin * du);
                     add.set(v2d);
-                    add = add.mul(Mth.sin((float) Math.toRadians(currentAngle - i1)) * (zenithProjectile.acceleration - 1.0)).add(-cos, -sin).mul(dr * r / v);
+                    add = add.mul(Mth.sin((float) Math.toRadians(currentAngle - i1)) * (zenithProjectile.acceleration - 1.0)).add(-cos, -sin).mul(dr * r / (byte) 18);
                     float x_e = (float)((double)x_s + add.x);
                     this.vertex(matrix4f, matrix3f, vertexconsumer, x_e, y_s, u_e, v_s, l);
                     this.vertex(matrix4f, matrix3f, vertexconsumer, x_s, y_s, u_s, v_s, l);

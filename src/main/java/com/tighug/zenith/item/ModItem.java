@@ -2,7 +2,6 @@ package com.tighug.zenith.item;
 
 import com.tighug.zenith.util.VariableAABB;
 import com.tighug.zenith.world.entity.ZenithProjectile;
-
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -22,7 +21,6 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentCategory;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.ForgeTier;
 import net.minecraftforge.common.Tags.Blocks;
@@ -52,7 +50,7 @@ public final class ModItem {
                         double d = 0.2;
                         Vec3 vec3;
                         double length;
-                        var list = level.getEntities((Entity) null, new VariableAABB(player.position(), player.position().add(lookAngle.scale(50))).inflate(0.0, 1.0, 0.0).toAABB(), e -> e instanceof Enemy && e.isAlive() && e.isAttackable());
+                        var list = level.getEntities((Entity) null, new VariableAABB(player.position(), player.position().add(lookAngle.scale(50))).inflate(1.0).toAABB(), e -> e instanceof Enemy && e.isAlive() && e.isAttackable());
                         for(Entity entity1 : list) {
                             vec3 = player.position().vectorTo(entity1.position());
                             length = vec3.length();
